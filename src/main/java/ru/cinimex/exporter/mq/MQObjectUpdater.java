@@ -30,7 +30,8 @@ import ru.cinimex.exporter.mq.subscriber.MQTopicSubscriber;
 import ru.cinimex.exporter.prometheus.metrics.MetricsManager;
 
 /**
- * Runnable for updating monitoring object (in case some objects were created or removed).
+ * Runnable for updating monitoring object (in case some objects were created or
+ * removed).
  */
 public class MQObjectUpdater implements Runnable {
 
@@ -43,9 +44,8 @@ public class MQObjectUpdater implements Runnable {
   private final MQQueueManager queueManager;
   private Set<MQObject> mqObjects;
 
-  public MQObjectUpdater(final Config config,
-      Map<String, MQTopicSubscriber> topicSubscribers, Map<MQType, PCFSubscriber> mqpcfSubscribers,
-      List<PCFElement> pcfElements) {
+  public MQObjectUpdater(final Config config, Map<String, MQTopicSubscriber> topicSubscribers,
+      Map<MQType, PCFSubscriber> mqpcfSubscribers, List<PCFElement> pcfElements) {
     this.config = config;
     this.pcfElements = pcfElements;
     this.mqTopicSubscribers = topicSubscribers;
@@ -59,12 +59,12 @@ public class MQObjectUpdater implements Runnable {
     Set<MQObject> monitoringObjects;
     try {
 
-      //Get all objects from MQ
+      // Get all objects from MQ
       monitoringObjects = getMonitoringObjects(config);
       Set<MQObject> objectsToRemove = new HashSet<>();
       Set<MQObject> objectsToCreate = new HashSet<>();
 
-      //Define new objects, which should be monitored (were created)
+      // Define new objects, which should be monitored (were created)
       // and objects, which should be destroyed (were removed)
       if (mqObjects == null) {
         objectsToCreate.addAll(monitoringObjects);
@@ -85,7 +85,7 @@ public class MQObjectUpdater implements Runnable {
 
       for (MQObject mqObject : objectsToRemove) {
         Iterator<Entry<String, MQTopicSubscriber>> iterator = mqTopicSubscribers.entrySet().iterator();
-        while (iterator.hasNext()){
+        while (iterator.hasNext()) {
           Entry<String, MQTopicSubscriber> subscriber = iterator.next();
           if (subscriber.getValue().relatedToObject(mqObject.getName())) {
             subscriber.getValue().stopProcessing();
@@ -118,7 +118,7 @@ public class MQObjectUpdater implements Runnable {
         }
       }
 
-      for(MQObject mqObject : objectsToRemove){
+      for (MQObject mqObject : objectsToRemove) {
         MetricsManager.removeMetrics(config.getQmgrName(), mqObject.getName());
       }
 
@@ -138,7 +138,8 @@ public class MQObjectUpdater implements Runnable {
     if (object.getType().equals(MQObject.MQType.QUEUE)) {
       PCFElement objElement = new PCFElement(element.getTopicString(), element.getRows());
       objElement.formatTopicString(object.getName());
-      mqTopicSubscribers.put(objElement.getTopicString(), new MQTopicSubscriber(objElement, config.getQmgrName(), object.getName()));
+      mqTopicSubscribers.put(objElement.getTopicString(),
+          new MQTopicSubscriber(objElement, config.getQmgrName(), object.getName()));
     }
   }
 
@@ -165,24 +166,20 @@ public class MQObjectUpdater implements Runnable {
 
     for (MQObject.MQType type : MQObject.MQType.values()) {
       switch (type) {
-        case QUEUE:
-          objects
-              .addAll(inquireMQObjectsByPatterns(config.getQueues().get("include"), type, MQCACF_Q_NAMES));
-          inquireMQObjectsByPatterns(config.getQueues().get("exclude"), type, MQCACF_Q_NAMES).forEach(
-              objects::remove);
-          break;
-        case CHANNEL:
-          objects.addAll(
-              inquireMQObjectsByPatterns(config.getChannels().get("include"), type, MQCACH_CHANNEL_NAMES));
-          inquireMQObjectsByPatterns(config.getChannels().get("exclude"), type, MQCACH_CHANNEL_NAMES).forEach(
-              objects::remove);
-          break;
-        case LISTENER:
-          objects.addAll(
-              inquireMQObjectsByPatterns(config.getListeners().get("include"), type, MQCACH_LISTENER_NAME));
-          inquireMQObjectsByPatterns(config.getListeners().get("exclude"), type, MQCACH_LISTENER_NAME).forEach(
-              objects::remove);
-          break;
+      case QUEUE:
+        objects.addAll(inquireMQObjectsByPatterns(config.getQueues().get("include"), type, MQCACF_Q_NAMES));
+        inquireMQObjectsByPatterns(config.getQueues().get("exclude"), type, MQCACF_Q_NAMES).forEach(objects::remove);
+        break;
+      case CHANNEL:
+        objects.addAll(inquireMQObjectsByPatterns(config.getChannels().get("include"), type, MQCACH_CHANNEL_NAMES));
+        inquireMQObjectsByPatterns(config.getChannels().get("exclude"), type, MQCACH_CHANNEL_NAMES)
+            .forEach(objects::remove);
+        break;
+      case LISTENER:
+        objects.addAll(inquireMQObjectsByPatterns(config.getListeners().get("include"), type, MQCACH_LISTENER_NAME));
+        inquireMQObjectsByPatterns(config.getListeners().get("exclude"), type, MQCACH_LISTENER_NAME)
+            .forEach(objects::remove);
+        break;
       }
     }
     return objects;
@@ -195,27 +192,30 @@ public class MQObjectUpdater implements Runnable {
     if (rules != null && !rules.isEmpty()) {
       PCFMessageAgent agent = new PCFMessageAgent();
       agent.connect(queueManager);
-      for (String rule : rules) {
-        PCFMessage pcfCommand = PCFCommand.preparePCFCommand(type, rule);
-        PCFMessage[] pcfResponse = agent.send(pcfCommand);
-        if (!type.equals(MQObject.MQType.LISTENER)) {
-          String[] names = (String[]) pcfResponse[0].getParameterValue(getValueParam);
+      try {
+        for (String rule : rules) {
+          PCFMessage pcfCommand = PCFCommand.preparePCFCommand(type, rule);
+          PCFMessage[] pcfResponse = agent.send(pcfCommand);
+          if (!type.equals(MQObject.MQType.LISTENER)) {
+            String[] names = (String[]) pcfResponse[0].getParameterValue(getValueParam);
 
-          for (String name : names) {
-            String objName = name.trim();
-            if (!objName.startsWith("AMQ.")) {
-              objects.add(new MQObject(objName, type));
+            for (String name : names) {
+              String objName = name.trim();
+              if (!objName.startsWith("AMQ.")) {
+                objects.add(new MQObject(objName, type));
+              }
+            }
+          } else {
+            for (PCFMessage pcfMessage : pcfResponse) {
+              objects.add(new MQObject(pcfMessage.getParameterValue(MQCACH_LISTENER_NAME).toString().trim(), type));
             }
           }
-        } else {
-          for (PCFMessage pcfMessage : pcfResponse) {
-            objects.add(
-                new MQObject(pcfMessage.getParameterValue(MQCACH_LISTENER_NAME).toString().trim(),
-                    type));
-          }
         }
+      } catch (MQDataException | IOException ee) {
+        throw ee;
+      } finally {
+        agent.disconnect();
       }
-      agent.disconnect();
     }
 
     return objects;
